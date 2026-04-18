@@ -1,0 +1,47 @@
+# ============ 大文件 / 模型 ============
+# 184MB 的嵌入模型，用户自己下载，不进 git
+bge-small-zh-v1.5/
+
+# PDF 原文件（版权材料，用户自备）
+data/*.pdf
+
+# ============ 运行产物 ============
+# 向量库(运行时自动构建)
+rag_chroma_200/
+interview_rag_db_50/
+interview_rag_db_200/
+
+# 评测输出
+eval_results/
+
+# BM25 缓存（运行时自动生成）
+bm25_cache_*.pkl
+
+# 笔记数据库（本地用户数据）
+notes.db
+
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# ============ 虚拟环境 ============
+venv/
+env/
+.venv/
+.env
+
+# ============ IDE ============
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ============ 系统 ============
+.DS_Store
+Thumbs.db
+
+# ============ 日志 ============
+*.log
