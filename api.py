@@ -1,9 +1,11 @@
+import re
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from rag_backend import ask, clear_session
 from agent import agent_ask
 from notes_db import save_note, get_notes, delete_note
+from tools import generate_quiz
 
 app = FastAPI(title="面试题 RAG 接口")
 
@@ -22,6 +24,11 @@ class NoteCreate(BaseModel):
     title: str
     content: str
     chapter: Optional[str] = ""
+
+
+class PracticeRequest(BaseModel):
+    chapter: str
+    n: int = 3
 
 
 # ── 普通 RAG 问答 ──────────────────────────────
@@ -51,6 +58,24 @@ def agent_ask_endpoint(q: Question):
 def clear(s: Session):
     clear_session(s.session_id)
     return {"status": "ok"}
+
+
+# ── 练习模式：获取题目 ────────────────────────
+@app.post("/practice/questions")
+def practice_questions(req: PracticeRequest):
+    """生成指定章节的练习题目列表"""
+    raw = generate_quiz.invoke({"chapter": req.chapter, "n": req.n})
+    questions = re.findall(r'Q\d+:\s*(.+?)(?=\nA\d+:|\n\n|$)', raw, re.MULTILINE)
+    questions = [q.strip() for q in questions if q.strip()]
+    return {"questions": questions, "chapter": req.chapter}
+
+
+# ── 练习模式：评估单题答案 ────────────────────
+@app.post("/practice/evaluate")
+def practice_evaluate(q: Question):
+    """评估练习答案，格式：针对题目：{q}\n我的答案是：{a}"""
+    result = agent_ask(question=q.query, session_id=q.session_id)
+    return {"evaluation": result.answer}
 
 
 # ── 笔记：保存 ────────────────────────────────

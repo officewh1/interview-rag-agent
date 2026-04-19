@@ -58,6 +58,11 @@ _EVAL_KEYWORDS = [
     "我的回答是", "评分", "打分", "对不对", "答案对吗",
 ]
 
+# 练习模式结构化格式（由前端按钮生成）
+_PRACTICE_PATTERN = re.compile(
+    r"针对题目：(.+?)\n我的答案是：(.+)", re.DOTALL
+)
+
 # ===============================
 # Agent 执行结果
 # ===============================
@@ -98,6 +103,8 @@ def _needs_web(text: str) -> bool:
     return any(k in text for k in _TEMPORAL_KEYWORDS)
 
 def _is_eval_request(text: str) -> bool:
+    if _PRACTICE_PATTERN.search(text):
+        return True
     return any(k in text for k in _EVAL_KEYWORDS)
 
 def _extract_sql(text: str) -> str:
@@ -152,10 +159,11 @@ _PROMPT_RAG = PromptTemplate(
 )
 
 _PROMPT_EVAL = PromptTemplate(
-    input_variables=["user_answer", "rag_context"],
+    input_variables=["target_question", "user_answer", "rag_context"],
     template=(
         "你是一位严格但友善的面试考官。\n"
-        "请对面试者的回答进行评估，参考标准答案来自知识库。\n\n"
+        "请对面试者针对以下题目的回答进行评估，参考标准答案来自知识库。\n\n"
+        "【面试题目】\n{target_question}\n\n"
         "【知识库参考答案】\n{rag_context}\n\n"
         "【面试者的回答】\n{user_answer}\n\n"
         "请按以下格式输出评估报告：\n\n"
@@ -265,24 +273,33 @@ def agent_ask(question: str, session_id: str = "default") -> AgentResult:
     # 路由 C：答案评估
     # ══════════════════════════════════════════
     elif route == "eval":
-        # 从用户输入中提取"用户的答案"部分
-        # 去掉触发词，剩余内容视为答案主体
-        user_answer = question
-        for kw in _EVAL_KEYWORDS:
-            user_answer = user_answer.replace(kw, "").strip()
-        if user_answer.startswith("：") or user_answer.startswith(":"):
-            user_answer = user_answer[1:].strip()
-        if not user_answer:
-            user_answer = question  # 兜底：用整句话检索
+        # 优先检测练习模式（前端按钮生成的结构化格式）
+        practice_match = _PRACTICE_PATTERN.search(question)
+        if practice_match:
+            target_question = practice_match.group(1).strip()
+            user_answer    = practice_match.group(2).strip()
+            search_query   = target_question   # 用题目检索，更精准
+            trace.append({"step": "📝 练习模式", "detail": f"题目：{target_question[:80]}"})
+        else:
+            # 兜底：关键词触发，去掉触发词提取答案
+            target_question = question
+            user_answer = question
+            for kw in _EVAL_KEYWORDS:
+                user_answer = user_answer.replace(kw, "").strip()
+            if user_answer.startswith("：") or user_answer.startswith(":"):
+                user_answer = user_answer[1:].strip()
+            if not user_answer:
+                user_answer = question
+            search_query = question
+            trace.append({"step": "📝 提取用户答案", "detail": user_answer[:200]})
 
-        trace.append({"step": "📝 提取用户答案", "detail": user_answer[:200]})
-
-        trace.append({"step": "🔍 RAG 检索参考答案", "detail": question})
-        rag_result = rag_search.invoke({"query": question})
+        trace.append({"step": "🔍 RAG 检索参考答案", "detail": search_query})
+        rag_result = rag_search.invoke({"query": search_query})
         trace.append({"step": "✅ RAG 完成", "detail": rag_result[:150] + "..."})
 
         trace.append({"step": "🤖 LLM 评估打分", "detail": "正在生成..."})
         prompt = _PROMPT_EVAL.format(
+            target_question=target_question,
             user_answer=user_answer,
             rag_context=rag_result,
         )
