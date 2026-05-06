@@ -103,16 +103,10 @@ def chapter_summary(chapter: str) -> str:
     if not docs:
         return f"未找到【{chapter}】相关内容。"
 
-    context = "\n---\n".join(d.page_content[:300] for d in docs[:9])
+    context = "\n---\n".join(d.page_content[:150] for d in docs[:5])
     prompt = (
-        f"你是一个面试辅导助手。请基于以下【{chapter}】章节内容，"
-        "整理出结构化的知识点总览。\n\n"
-        "要求：\n"
-        "1. 列出 5~8 个核心知识点，每点一行，加序号\n"
-        "2. 每个知识点用一句话说明核心内容\n"
-        "3. 最后用一句话概括本章重点\n\n"
-        f"参考内容：\n{context}\n\n"
-        f"【{chapter}】知识点总览："
+        f"基于以下【{chapter}】内容，列出5个核心知识点，每点一句话，加序号。最后一句概括本章重点。\n\n"
+        f"参考内容：\n{context}\n\n知识点总览："
     )
     result = llm.invoke(prompt)
     return result.content if hasattr(result, "content") else str(result)
@@ -138,18 +132,13 @@ def generate_quiz(chapter: str, n: int = 3) -> str:
     if not docs:
         return f"未找到【{chapter}】相关内容，无法生成题目。"
 
-    context = "\n---\n".join(d.page_content[:300] for d in docs[:6])
+    context = "\n---\n".join(d.page_content[:150] for d in docs[:3])
     prompt = (
-        f"你是一个面试辅导助手。请基于以下【{chapter}】内容，"
-        f"生成 {n} 道典型面试题并给出参考答案。\n\n"
-        "格式要求（严格遵守）：\n"
-        "Q1: [面试问题]\n"
-        "A1: [参考答案，2~4句话]\n\n"
-        "Q2: [面试问题]\n"
-        "A2: [参考答案，2~4句话]\n\n"
-        "题目类型要多样：包含定义类、方法类、对比类。\n\n"
-        f"参考内容：\n{context}\n\n"
-        "生成题目："
+        f"你是面试辅导助手。基于以下【{chapter}】内容生成 {n} 道面试题，每题附1~2句参考答案。\n"
+        "严格按格式输出，不要多余说明：\n"
+        "Q1: 问题\nA1: 答案\n\nQ2: 问题\nA2: 答案\n\n"
+        "题型多样（定义/方法/对比）。\n\n"
+        f"参考内容：\n{context}\n\n生成："
     )
     result = llm.invoke(prompt)
     return result.content if hasattr(result, "content") else str(result)

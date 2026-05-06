@@ -92,7 +92,7 @@ with st.sidebar:
                     resp = requests.post(
                         f"{BASE_URL}/practice/questions",
                         json={"chapter": prac_chapter, "n": prac_n},
-                        timeout=60,
+                        timeout=180,
                     )
                     data = resp.json()
                     qs = data.get("questions", [])

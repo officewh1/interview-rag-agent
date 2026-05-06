@@ -9,6 +9,7 @@
 # =========================================
 
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -214,19 +215,20 @@ def agent_ask(question: str, session_id: str = "default") -> AgentResult:
     # ══════════════════════════════════════════
     if route == "review":
 
-        # 步骤 1：章节知识点总结
-        trace.append({"step": "📋 步骤1：章节知识点总结", "detail": f"正在梳理【{target_chapter}】核心知识点..."})
-        summary = chapter_summary.invoke({"chapter": target_chapter})
-        trace.append({"step": "✅ 总结完成", "detail": summary[:150] + "..."})
+        trace.append({"step": "⚡ 并行执行", "detail": f"同步检索考点 + 生成总结 + 生成模拟题（并行加速）"})
 
-        # 步骤 2：检索高频考点
-        trace.append({"step": "🔍 步骤2：检索高频考点", "detail": f"查询【{target_chapter}】高频面试考点..."})
-        rag_result = rag_search.invoke({"query": f"{target_chapter} 常见面试题 重点", "chapter": target_chapter})
-        trace.append({"step": "✅ 考点检索完成", "detail": rag_result[:150] + "..."})
+        # 三项任务并行：rag_search（快）+ chapter_summary（LLM）+ generate_quiz（LLM）
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            f_rag     = pool.submit(rag_search.invoke,      {"query": f"{target_chapter} 常见面试题 重点", "chapter": target_chapter})
+            f_summary = pool.submit(chapter_summary.invoke, {"chapter": target_chapter})
+            f_quiz    = pool.submit(generate_quiz.invoke,   {"chapter": target_chapter, "n": 3})
 
-        # 步骤 3：生成模拟面试题
-        trace.append({"step": "🎯 步骤3：生成模拟面试题", "detail": f"为【{target_chapter}】生成 3 道模拟题..."})
-        quiz_text = generate_quiz.invoke({"chapter": target_chapter, "n": 3})
+            rag_result = f_rag.result()
+            summary    = f_summary.result()
+            quiz_text  = f_quiz.result()
+
+        trace.append({"step": "✅ 考点检索完成",  "detail": rag_result[:150] + "..."})
+        trace.append({"step": "✅ 知识总结完成",  "detail": summary[:150] + "..."})
         trace.append({"step": "✅ 模拟题生成完成", "detail": quiz_text[:150] + "..."})
 
         # 组合最终答案

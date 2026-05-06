@@ -1,4 +1,5 @@
 import re
+import threading
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -8,6 +9,29 @@ from notes_db import save_note, get_notes, delete_note
 from tools import generate_quiz
 
 app = FastAPI(title="面试题 RAG 接口")
+
+# ── 题目预缓存（每章节最多缓存 5 道，后台线程生成）──────────────
+_CHAPTERS = ["软件工程", "数据库", "机器学习", "大数据"]
+_quiz_cache: dict[str, list[str]] = {}   # chapter -> [q1, q2, ...]
+_cache_lock = threading.Lock()
+
+def _warm_cache(chapter: str, n: int = 5):
+    """后台预生成指定章节题目并缓存"""
+    try:
+        raw = generate_quiz.invoke({"chapter": chapter, "n": n})
+        questions = re.findall(r'Q\d+:\s*(.+?)(?=\nA\d+:|\n\n|$)', raw, re.MULTILINE)
+        questions = [q.strip() for q in questions if q.strip()]
+        if questions:
+            with _cache_lock:
+                _quiz_cache[chapter] = questions
+    except Exception:
+        pass
+
+@app.on_event("startup")
+def _startup_warm():
+    """服务启动后异步预热所有章节题目"""
+    for ch in _CHAPTERS:
+        threading.Thread(target=_warm_cache, args=(ch,), daemon=True).start()
 
 
 class Question(BaseModel):
@@ -63,11 +87,23 @@ def clear(s: Session):
 # ── 练习模式：获取题目 ────────────────────────
 @app.post("/practice/questions")
 def practice_questions(req: PracticeRequest):
-    """生成指定章节的练习题目列表"""
-    raw = generate_quiz.invoke({"chapter": req.chapter, "n": req.n})
+    """优先从缓存取题目；缓存未就绪则实时生成，并在后台刷新缓存"""
+    chapter, n = req.chapter, req.n
+
+    with _cache_lock:
+        cached = _quiz_cache.get(chapter, [])
+
+    if cached:
+        # 缓存命中：取前 n 道，并后台刷新缓存备下次使用
+        questions = cached[:n]
+        threading.Thread(target=_warm_cache, args=(chapter, 5), daemon=True).start()
+        return {"questions": questions, "chapter": chapter}
+
+    # 缓存未就绪：实时生成
+    raw = generate_quiz.invoke({"chapter": chapter, "n": n})
     questions = re.findall(r'Q\d+:\s*(.+?)(?=\nA\d+:|\n\n|$)', raw, re.MULTILINE)
     questions = [q.strip() for q in questions if q.strip()]
-    return {"questions": questions, "chapter": req.chapter}
+    return {"questions": questions, "chapter": chapter}
 
 
 # ── 练习模式：评估单题答案 ────────────────────
